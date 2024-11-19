@@ -1,5 +1,12 @@
 pandas
 metaflow
+metaflow-card-html
 mlflow
 xgboost
 scikit-learn
+category_encoders
+pyarrow
+python-dotenv
+pylint
+black
+joblib

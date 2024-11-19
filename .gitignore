@@ -1,2 +1,10 @@
 # Ignore all files in the venv folder
 /venv/
+/.mypy_cache/
+.env
+*/__pycache__/*
+/.mypy_cache/
+/.vscode/
+/.metaflow/
+/mlruns/
+hotel-reservation-runs.db
