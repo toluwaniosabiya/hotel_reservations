@@ -252,9 +252,9 @@ class Training(FlowSpec):
         model_input = {k: [v] for k, v in input_dict.items()}
 
         model_output = {
-            "hotelId": model_input["hotelId"],
-            "prediction(s)": [1],
-            "prediction_probability(s)": [0.708354],
+            "Hotel ID": model_input["hotelId"],
+            "Prediction": [1],
+            "Prediction Probability": [0.708354],
         }
 
         params = {"data_capture": False}
