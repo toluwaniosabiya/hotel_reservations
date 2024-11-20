@@ -1,9 +1,6 @@
 import sqlite3
 import mlflow
 import joblib
-import uuid
-import os
-
 
 import numpy as np
 import pandas as pd
@@ -22,6 +19,9 @@ class Model(mlflow.pyfunc.PythonModel):
     is invoked, this class gets the model together with its artifacts and
     other dependencies, like any transformation functions, to ensure the
     model runs properly and makes predictions.
+
+    The class also optionally tracks the input data and model predictions
+    for monitoring and feedback.
     """
 
     def __init__(
@@ -81,12 +81,14 @@ class Model(mlflow.pyfunc.PythonModel):
         if transformed_input_data is not None:
             pred = self.model.predict(transformed_input_data)
             pred_proba = self.model.predict_proba(transformed_input_data)
+            # Get the prediction probability for just the positive class
+            pred_proba = pred_proba[:, 1]
 
             self.result = self.serve_output(pred, pred_proba)
 
         # Define if input data will be tracked based on the value of data_capture
         if self.data_capture:
-            self.capture(self.input_data, result)
+            self.capture(self.input_data, self.result)
 
         return self.result
 
@@ -108,12 +110,12 @@ class Model(mlflow.pyfunc.PythonModel):
         )
 
         return result
-    
+
     def capture(self, input_data: pd.DataFrame, result: pd.DataFrame) -> pd.DataFrame:
         """
         Capture input data and prediction results in a database.
 
-        This is useful for ensuring model monitoring and providing 
+        This is useful for ensuring model monitoring and providing
         feedback for model improvement.
         """
 
@@ -122,12 +124,22 @@ class Model(mlflow.pyfunc.PythonModel):
         try:
             connection = sqlite3.connect(self.data_collection_uri)
 
-            df = self.input_data.copy()
+            df = input_data.copy()
 
             if self.result is not None:
-                df['Prediction'] = self.result["Prediction"]
-                df["Prediction Probability"] = self.result["Prediction Probability"]
+                df["Prediction"] = result["Prediction"]
+                df["Prediction Probability"] = result["Prediction Probability"]
                 df["date"] = datetime.now(timezone.utc)
-                
+            else:
+                print(
+                    "There was an error logging the required information as there are no results"
+                )
 
+            df.to_sql("production_table", connection, if_exists="append", index=False)
 
+        except sqlite3.Error:
+            print("There was an error connecting to the database")
+
+        finally:
+            if connection:
+                connection.close()
