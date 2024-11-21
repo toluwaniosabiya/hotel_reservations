@@ -60,7 +60,11 @@ class Model(mlflow.pyfunc.PythonModel):
 
         return processed_data
 
-    def predict(self, input_data: pd.DataFrame | dict) -> pd.DataFrame:
+    def predict(
+        self,
+        context: PythonModelContext,
+        input_data: pd.DataFrame | dict | list,
+    ) -> dict:
         """
         Make predictions on inputed data and return the predictions.
 
@@ -68,13 +72,15 @@ class Model(mlflow.pyfunc.PythonModel):
         predicted class, and prediction probability.
         """
 
-        if not isinstance(input_data, pd.DataFrame | dict):
+        if not isinstance(input_data, pd.DataFrame | dict | list):
             print("You have passed in the wrong data format!")
             print("Data needs to be a dataframe or a dictionary.")
             return None
 
-        if isinstance(input_data, dict):
+        if isinstance(input_data, dict | list):
             self.input_data = pd.DataFrame(input_data)
+        elif isinstance(input_data, pd.DataFrame):
+            self.input_data = input_data
 
         transformed_input_data = self.process_input(self.input_data)
 
@@ -92,14 +98,14 @@ class Model(mlflow.pyfunc.PythonModel):
 
         return self.result
 
-    def serve_output(self, pred: np.ndarray, pred_proba: np.ndarray) -> pd.DataFrame:
+    def serve_output(self, pred: np.ndarray, pred_proba: np.ndarray) -> dict:
         """
         Tranform model predictions to human-readable format.
 
         Returns a dataframe.
         """
 
-        hotel_id = self.input_data["hotelID"]
+        hotel_id = self.input_data["hotelId"]
 
         result = pd.DataFrame(
             {
@@ -109,9 +115,9 @@ class Model(mlflow.pyfunc.PythonModel):
             }
         )
 
-        return result
+        return result  # .to_dict(orient="list")
 
-    def capture(self, input_data: pd.DataFrame, result: pd.DataFrame) -> pd.DataFrame:
+    def capture(self, input_data: pd.DataFrame, result: pd.DataFrame) -> None:
         """
         Capture input data and prediction results in a database.
 
@@ -126,16 +132,17 @@ class Model(mlflow.pyfunc.PythonModel):
 
             df = input_data.copy()
 
-            if self.result is not None:
+            if self.result is not None and self.data_capture:
                 df["Prediction"] = result["Prediction"]
                 df["Prediction Probability"] = result["Prediction Probability"]
                 df["date"] = datetime.now(timezone.utc)
-            else:
-                print(
-                    "There was an error logging the required information as there are no results"
+                df.to_sql(
+                    "production_table", connection, if_exists="append", index=False
                 )
-
-            df.to_sql("production_table", connection, if_exists="append", index=False)
+            else:
+                print("No information was logged because data_capture is set to False.")
+                connection.close()
+                return
 
         except sqlite3.Error:
             print("There was an error connecting to the database")

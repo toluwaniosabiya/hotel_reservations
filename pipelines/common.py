@@ -4,14 +4,25 @@ import numpy as np
 import category_encoders as ce
 
 
-def load_dataset(data_path: str) -> pd.DataFrame:
+def load_dataset(data_path: str, convert_binaries: bool = True) -> pd.DataFrame:
     """
     Reads a parquet file from a datapath and returns a
     dataframe object
     """
     dataset = pq.read_table(data_path)
     data = dataset.to_pydict()
-    return pd.DataFrame(data)
+    data = pd.DataFrame(data)
+
+    # Change binary columns to string
+    def _convert_binaries(row):
+        for column in ["searchId", "userId", "hotelId", "brandId"]:
+            row[column] = row[column].hex()
+        return row
+
+    if convert_binaries:
+        data = data.apply(_convert_binaries, axis=1)
+
+    return data
 
 
 def distinguish_label_and_features(df: pd.DataFrame) -> tuple:

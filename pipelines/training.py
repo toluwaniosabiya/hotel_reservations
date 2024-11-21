@@ -2,6 +2,7 @@ import dotenv
 import os
 import mlflow
 import joblib
+import tempfile
 
 import xgboost as xgb
 import numpy as np
@@ -21,6 +22,7 @@ from metaflow import (
     card,
 )
 from common import load_dataset
+from inference import Model
 
 
 @project(name="hotel_reservations")
@@ -45,7 +47,7 @@ class Training(FlowSpec):
         print(self.data_path)
 
         self.df = load_dataset(self.data_path)
-        # self.df = self.df[:500]
+        self.df = self.df[:500]
 
         dotenv.load_dotenv()
         self.mlflow_tracking_uri = os.getenv("MLFLOW_TRACKING_URI")
@@ -73,7 +75,7 @@ class Training(FlowSpec):
         # Split into training and test sets based on
         # unique indices
         unique_search_ids = self.df["searchId"].unique()
-        train_ids, test_ids = train_test_split(
+        self.train_ids, self.test_ids = train_test_split(
             unique_search_ids, test_size=0.15, random_state=42
         )
 
@@ -82,10 +84,10 @@ class Training(FlowSpec):
         self.data_transformer = HotelBooking()
 
         self.df_train = self.data_transformer.fit_transform(
-            self.df[self.df["searchId"].isin(train_ids)]
+            self.df[self.df["searchId"].isin(self.train_ids)]
         )
         self.df_test = self.data_transformer.transform(
-            self.df[self.df["searchId"].isin(test_ids)]
+            self.df[self.df["searchId"].isin(self.test_ids)]
         )
 
         mapper = self.data_transformer.encoding_map
@@ -128,7 +130,7 @@ class Training(FlowSpec):
         """
         mlflow.set_tracking_uri(self.mlflow_tracking_uri)
         with mlflow.start_run(run_id=self.mlflow_run_id):
-            mlflow.autolog()
+            mlflow.autolog(log_models=False)
 
             self.scale_pos_weight = sum(self.y_train == 0) / sum(self.y_train == 1)
             # The above controls the balance of positive and negative weights
@@ -169,10 +171,15 @@ class Training(FlowSpec):
         """
         Evaluate and log metrics
         """
-        y_pred = self.model.predict(self.X_test)
+        self.y_pred = self.model.predict(self.X_test)
+        self.y_pred_proba = self.model.predict_proba(self.X_test)[:, 1]
         # Create a DataFrame with the true and predicted values
         results_df = pd.DataFrame(
-            {"True_Label": self.y_test, "Predicted_Label": y_pred}
+            {
+                "True_Label": self.y_test,
+                "Predicted_Label": self.y_pred,
+                "Prediction_probaility": self.y_pred_proba,
+            }
         )
 
         # Save the DataFrame to a CSV file
@@ -180,9 +187,12 @@ class Training(FlowSpec):
 
         # Get a classification report.
         self.report = classification_report(
-            self.y_test, y_pred, target_names=["Not Booked", "Booked"], output_dict=True
+            self.y_test,
+            self.y_pred,
+            target_names=["Not Booked", "Booked"],
+            output_dict=True,
         )
-        self.conf_matrix = confusion_matrix(self.y_test, y_pred)
+        self.conf_matrix = confusion_matrix(self.y_test, self.y_pred)
 
         self.pos_class_recall = round(self.report["Booked"]["recall"], 2)
         self.mean_recall = round(
@@ -206,13 +216,30 @@ class Training(FlowSpec):
     @card
     @step
     def register_model(self):
-        pass
-        self.next(self.preview)
+        """
+        Registers the trained model in MLFlow.
 
-    @card
-    @step
-    def preview(self):
-        pass
+        Wraps the trained model in the Model class from the inference file.
+        Also includes model artifact to be logged to MLFlow.
+        """
+
+        mlflow.set_tracking_uri(self.mlflow_tracking_uri)
+        with (
+            mlflow.start_run(run_id=self.mlflow_run_id),
+            tempfile.TemporaryDirectory() as directory,
+        ):
+            mlflow.pyfunc.log_model(
+                artifact_path="model",
+                python_model=Model(data_capture=True),
+                registered_model_name="hotel-reservations",
+                code_paths=[
+                    (Path(__file__).parent / "inference.py").as_posix(),
+                    (Path(__file__).parent / "common.py").as_posix(),
+                ],
+                artifacts=self._get_model_artifacts(directory),
+                signature=self._get_model_signature(),
+                pip_requirements=self._get_model_pip_requirements(),
+            )
 
         self.next(self.end)
 
@@ -248,19 +275,22 @@ class Training(FlowSpec):
         This will include the expected format for model inputs and outputs.
         It gives some information about the correct use of the model.
         """
-        input_dict = self.df[:1].drop(columns="bookingLabel").transpose().to_dict()[0]
-        model_input = {k: [v] for k, v in input_dict.items()}
+        # input_dict = self.df[:1].drop(columns="bookingLabel").transpose().to_dict()[0]
+        model_input = (
+            self.df[self.df["searchId"].isin(self.test_ids)][:1]
+            .drop(columns="bookingLabel")
+            .to_dict(orient="records")[0]
+        )
 
         model_output = {
             "Hotel ID": model_input["hotelId"],
-            "Prediction": [1],
-            "Prediction Probability": [0.708354],
+            "Prediction": self.y_pred[0],
+            "Prediction Probability": self.y_pred_proba[0],
         }
 
-        params = {"data_capture": False}
-
         return infer_signature(
-            model_input=model_input, model_output=model_output, params=params
+            model_input=model_input,
+            model_output=model_output,
         )
 
     def _get_model_pip_requirements(self):
@@ -268,7 +298,7 @@ class Training(FlowSpec):
         Return list of required packages to run model
         """
 
-        with open(Path.cwd().parent / "requirements.txt", "r") as file:
+        with open(Path(__file__).parent.parent / "requirements.txt", "r") as file:
             lines = file.readlines()
 
             # Remove comments and blank lines, and strip whitespace

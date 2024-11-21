@@ -7,4 +7,6 @@
 /.vscode/
 /.metaflow/
 /mlruns/
-hotel-reservation-runs.db
+*.db
+*.csv
+output.json
