@@ -1,4 +1,5 @@
-# Hotel Reservations Analysis and Pipelines
+# Hotel Reservations Analysis and Pipelines: 
+## *A guide on using Metaflow for creating and monitoring data pipelines and MLflow for registering and versioning models*
 
 This project is designed to demonstrate how to build a data pipeline with Metaflow and use MLflow to register and version any trained model in the MLflow model registry. The dataset used is that of a hotel reservation company who want to know given some search parameters the hotel a user will likely book and the probability that the user will book any particular hotel. 
 
