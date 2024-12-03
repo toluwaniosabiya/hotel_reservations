@@ -7,6 +7,7 @@
 /.vscode/
 /.metaflow/
 /mlruns/
+/mlartifacts/
 *.db
 *.csv
-output.json
+*.in

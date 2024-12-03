@@ -235,6 +235,7 @@ class Training(FlowSpec):
                 code_paths=[
                     (Path(__file__).parent / "inference.py").as_posix(),
                     (Path(__file__).parent / "common.py").as_posix(),
+                    (Path(__file__).parent / "training.py").as_posix(),
                 ],
                 artifacts=self._get_model_artifacts(directory),
                 signature=self._get_model_signature(),
