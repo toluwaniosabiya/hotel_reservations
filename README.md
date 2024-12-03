@@ -19,7 +19,6 @@ hotel_reservations-main/
 ├── README.md                          # Project documentation (you are reading this)
 ├── requirements.in                    # Input dependency specifications
 ├── requirements.txt                   # Locked dependencies for environment setup
-├── hotel-reservations.ipynb           # Jupyter Notebook for exploration
 ```
 
 ## Exploration Instructions
